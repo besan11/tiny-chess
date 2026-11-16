@@ -285,34 +285,46 @@ def gen(caps):
                         break
                     t += dd
     return ms
+def kng(sq, ph):
+    r = sq >> 4
+    f = sq & 7
+    mg = PK[(7 - r) * 8 + f]
+    eg = 8 * (min(f, 7 - f) + min(r, 7 - r)) - 24
+    return (mg * ph + eg * (6400 - ph)) // 6400
 def ev():
     s = 0
     nw = nb = 0
     np = nr = nq = nm = 0
+    ph = 0
     for q in range(128):
         p = b[q]
         if p:
+            a = abs(p)
+            if a == 6:
+                continue
+            if a != 1:
+                ph += VAL[a]
             if p > 0:
                 s += T[p][q]
-                if p == 3:
+                if a == 3:
                     nw += 1
                     nm += 1
-                elif p == 1:
+                elif a == 1:
                     np += 1
-                elif p == 4:
+                elif a == 4:
                     nr += 1
-                elif p == 5:
+                elif a == 5:
                     nq += 1
             else:
-                s -= T[-p][q ^ 0x70]
-                if p == -3:
+                s -= T[a][q ^ 0x70]
+                if a == 3:
                     nb += 1
                     nm += 1
-                elif p == -1:
+                elif a == 1:
                     np += 1
-                elif p == -4:
+                elif a == 4:
                     nr += 1
-                elif p == -5:
+                elif a == 5:
                     nq += 1
     if nw >= 2:
         s += 30
@@ -320,6 +332,9 @@ def ev():
         s -= 30
     if np == 0 and nr == 0 and nq == 0 and nm <= 1:
         return 0
+    if ph > 6400:
+        ph = 6400
+    s += kng(wk, ph) - kng(bk ^ 0x70, ph)
     return s if turn == 0 else -s
 def is_cap(m):
     t = (m >> 7) & 127
@@ -334,6 +349,9 @@ def order_moves(ms, tt, ply):
         t = (m >> 7) & 127
         p = b[f]
         q = b[t]
+        pr = (m >> 14) & 7
+        if pr:
+            return 200000 + VAL[pr]
         if q or (abs(p) == 1 and t == ep):
             v = abs(q) if q else 1
             return 10000 + VAL[v] * 10 - VAL[abs(p)]
