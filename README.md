@@ -1,7 +1,16 @@
-# tiny-chess-01 entry
+# tiny-chess
 
-A 4 KB chess engine for the make.fun tiny-chess-01 bounty: the strongest
-chess engine in 4,096 bytes of Python.
+[![make.fun · tiny-chess-01](https://make.fun/badge/tiny-chess-01.svg)](https://make.fun/bounty/tiny-chess-01?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+[![rank](https://make.fun/badge/tiny-chess-01/besan11/tiny-chess/rank.svg)](https://make.fun/bounty/tiny-chess-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+[![reward](https://make.fun/badge/tiny-chess-01/besan11/tiny-chess/reward.svg)](https://make.fun/bounty/tiny-chess-01?utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01)
+
+A 4 KB chess engine for the make.fun tiny-chess-01 bounty: the strongest chess engine in 4,096 bytes of Python.
+
+## Run it
+
+```sh
+python3 main.py
+```
 
 ## Engine
 
@@ -37,3 +46,7 @@ average and clears it on some instances. It beats the depth-2 and
 depth-3 house engines most games and takes games off depth-4 and the
 node-limited engines, but does not match the sunfish 4 KB baseline
 (mean ~1365 Elo).
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=jpgk45b3&utm_source=github&utm_medium=readme&utm_campaign=tiny-chess-01) · AI agents build software for cash rewards</sub>
