@@ -1,24 +1,14 @@
-# Tiny chess engine for make.fun tiny-chess-01.
-# 0x88 board, negamax alpha-beta with iterative deepening to a fixed node
-# budget, transposition table, killer + history move ordering, quiescence
-# over captures and promotions, material + piece-square evaluation.
-# Talks to the env over HTTP (POST /game, /move). Deterministic: the search
-# never reads a clock and never uses unseeded randomness, so a replayed
-# trial plays the same moves.
 import json
 import os
 import random
 import sys
 import urllib.error
 import urllib.request
-
 ENV = os.environ.get("MAKEFUN_ENV_URL") or sys.exit("MAKEFUN_ENV_URL is not set")
-BUDGET = 60000  # nodes per move, fixed: keeps every replay identical
+BUDGET = 60000
 MATE = 100000
 INF = 10 ** 9
-
 VAL = [0, 100, 320, 330, 500, 900, 20000]
-# Piece-square tables, white's view, a8 first (standard simplified values).
 PP = [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0]
 PN = [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50]
 PB = [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20]
@@ -26,26 +16,21 @@ PR = [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0
 PQ = [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20]
 PK = [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20]
 PST = [0, PP, PN, PB, PR, PQ, PK]
-
-# Combined value + piece-square table, white's view, indexed by 0x88 square.
 T = [[0] * 128 for _ in range(7)]
 for _p in range(1, 7):
     for _s in range(128):
         if not (_s & 0x88):
             T[_p][_s] = VAL[_p] + PST[_p][(7 - (_s >> 4)) * 8 + (_s & 7)]
-
 KN = [33, 31, 18, 14, -14, -18, -31, -33]
 KG = [1, -1, 16, -16, 15, 17, -15, -17]
 BG = [15, 17, -15, -17]
 RG = [1, -1, 16, -16]
 QG = BG + RG
-
 _r = random.Random(20261116)
 Z = [[_r.getrandbits(64) for _ in range(128)] for _ in range(12)]
 ZT = _r.getrandbits(64)
 ZC = [_r.getrandbits(64) for _ in range(16)]
 ZE = [_r.getrandbits(64) for _ in range(8)]
-# Castling rights to keep when a piece leaves or lands on a square.
 CR = [15] * 128
 CR[0] = 13
 CR[7] = 14
@@ -53,16 +38,11 @@ CR[4] = 12
 CR[112] = 7
 CR[119] = 11
 CR[116] = 3
-
-
 def zi(p):
     return p - 1 if p > 0 else 5 - p
-
-
-# ---- mutable state ----
 b = [0] * 128
-turn = 0  # 0 white, 1 black
-castle = 0  # bits: 1 WK, 2 WQ, 4 BK, 8 BQ
+turn = 0
+castle = 0
 ep = -1
 half = 0
 key = 0
@@ -76,18 +56,11 @@ nodes = 0
 path = set()
 hist = set()
 ROOTBEST = 0
-
-
 class AB(Exception):
     pass
-
-
 def mk(f, t, pr):
     return f | (t << 7) | (pr << 14)
-
-
 def attacked(s, w):
-    """Is square s attacked by white (w True) or black?"""
     u = 1 if w else -1
     for d in (-15, -17) if w else (15, 17):
         t = s + d
@@ -120,8 +93,6 @@ def attacked(s, w):
                 break
             t += d
     return False
-
-
 def parse_fen(fen):
     global turn, castle, ep, half, key, wk, bk
     parts = fen.split()
@@ -172,8 +143,6 @@ def parse_fen(fen):
         k ^= ZE[ep & 7]
     key = k
     undo.clear()
-
-
 def make(m):
     global turn, castle, ep, half, key, wk, bk
     f = m & 127
@@ -221,8 +190,6 @@ def make(m):
     half = 0 if cap or abs(p) == 1 else half + 1
     key ^= ZT
     turn ^= 1
-
-
 def unmake():
     global turn, castle, ep, half, key, wk, bk
     m, cap, cs, c0, e0, h0, k0 = undo.pop()
@@ -247,10 +214,7 @@ def unmake():
         b[t] = cap
     castle, ep, half, key = c0, e0, h0, k0
     turn ^= 1
-
-
 def gen(caps):
-    """Pseudo-legal moves; caps=True gives captures and promotions only."""
     ms = []
     us = turn
     for s in range(128):
@@ -321,10 +285,7 @@ def gen(caps):
                         break
                     t += dd
     return ms
-
-
 def ev():
-    """Static evaluation, from the side to move's view."""
     s = 0
     nw = nb = 0
     np = nr = nq = nm = 0
@@ -360,15 +321,11 @@ def ev():
     if np == 0 and nr == 0 and nq == 0 and nm <= 1:
         return 0
     return s if turn == 0 else -s
-
-
 def is_cap(m):
     t = (m >> 7) & 127
     if b[t]:
         return True
     return abs(b[m & 127]) == 1 and t == ep
-
-
 def order_moves(ms, tt, ply):
     def sc(m):
         if m == tt:
@@ -385,10 +342,7 @@ def order_moves(ms, tt, ply):
         if m == KILL[ply][1]:
             return 8000
         return HIST[zi(p)][t]
-
     ms.sort(key=sc, reverse=True)
-
-
 def qs(a, be, ply):
     global nodes
     nodes += 1
@@ -435,8 +389,6 @@ def qs(a, be, ply):
             return -MATE + ply
         return best
     return a
-
-
 def search(d, a, be, ply):
     global nodes, ROOTBEST
     nodes += 1
@@ -511,8 +463,6 @@ def search(d, a, be, ply):
     if ply == 0:
         ROOTBEST = bm
     return best
-
-
 def legal_moves():
     out = []
     for m in gen(False):
@@ -523,8 +473,6 @@ def legal_moves():
             out.append(m)
         unmake()
     return out
-
-
 def uci(m):
     f = m & 127
     t = (m >> 7) & 127
@@ -533,8 +481,6 @@ def uci(m):
     if pr:
         s += "nbrq"[pr - 2]
     return s
-
-
 def think(legal_uci):
     global nodes, ROOTBEST, path
     ms = legal_moves()
@@ -555,8 +501,6 @@ def think(legal_uci):
         except AB:
             break
     return uci(best)
-
-
 def post(path_, body):
     req = urllib.request.Request(
         ENV + path_,
@@ -568,8 +512,6 @@ def post(path_, body):
             return json.load(r)
     except urllib.error.HTTPError as e:
         sys.exit(f"{path_}: HTTP {e.code}")
-
-
 if __name__ == "__main__":
     game_no = -1
     while True:
